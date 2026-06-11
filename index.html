@@ -673,15 +673,38 @@ function uniqueUrls(list){
     return true;
   });
 }
+function normalizeExternalUrl(url){
+  const s = String(url || '').trim();
+  if(!s) return '#';
+  if(/^https?:\/\//i.test(s)) return s;
+  if(s.startsWith('//')) return 'https:' + s;
+  return s;
+}
+function platformHomeUrl(p){
+  if(p && p.home) return normalizeExternalUrl(p.home);
+  const raw = String((p && p.url) || '').trim();
+  if(!raw) return '#';
+  try{
+    const cleaned = raw
+      .replace('{q}', '')
+      .replace(/([?&][^=&#]+=$)/, '')
+      .replace(/[?&]$/, '');
+    const u = new URL(cleaned);
+    return u.origin + '/';
+  }catch(e){
+    return raw.includes('{q}') ? raw.replace('{q}', '') : raw;
+  }
+}
 function platformUrl(p){
-  if((p.mode || 'search') === 'link') return p.url;
+  if((p.mode || 'search') === 'link') return normalizeExternalUrl(p.url);
   const q = getSearchInput();
   if(!q){
-    if(p.home) return p.home;
-    if(String(p.url || '').includes('{q}')) return '#';
-    return p.url;
+    // GitHub Pages 修复：以前这里返回 "#"，在 target="_blank" 下会打开当前页面的新标签，
+    // 于是又出现密码入口界面。现在没输入检索词时统一打开平台首页。
+    return platformHomeUrl(p);
   }
-  return String(p.url || '').includes('{q}') ? p.url.replace('{q}', enc(q)) : p.url;
+  const raw = normalizeExternalUrl(p.url);
+  return String(raw || '').includes('{q}') ? raw.replace('{q}', enc(q)) : raw;
 }
 function renderApiBar(){
   const box = document.getElementById('apiBar');
@@ -2058,8 +2081,8 @@ const PasswordGuard = (() => {
     confirmPassword.value = '';
   }
   function setAuthenticated(flag){
-    if(flag) sessionStorage.setItem(SESSION_KEY, '1');
-    else sessionStorage.removeItem(SESSION_KEY);
+    if(flag) localStorage.setItem(SESSION_KEY, '1');
+    else localStorage.removeItem(SESSION_KEY);
   }
   function unlockUI(){
     lockLayer.style.display = 'none';
@@ -2166,7 +2189,7 @@ const PasswordGuard = (() => {
   function init(){
     ensureStoredHash();
     bind();
-    if(sessionStorage.getItem(SESSION_KEY) === '1') unlockUI();
+    if(localStorage.getItem(SESSION_KEY) === '1') unlockUI();
     else lockUI();
   }
   return { init, lockUI };
@@ -2188,6 +2211,17 @@ renderFilterPanel();
 renderApiHealth([], '');
 renderApiSelfTest([]);
 PasswordGuard.init();
+
+// GitHub Pages 跳转保护：避免空链接、新标签打开自身页面后回到密码入口。
+document.addEventListener('click', (e) => {
+  const a = e.target.closest && e.target.closest('a[href]');
+  if(!a) return;
+  const href = (a.getAttribute('href') || '').trim();
+  if(!href || href === '#'){
+    e.preventDefault();
+    setStatus('该入口没有可打开的网址；请先输入检索词，或检查入口 URL。');
+  }
+});
 
 // ====== v2 UPGRADE START ======
 
